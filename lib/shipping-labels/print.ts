@@ -1,6 +1,6 @@
 import type { ShippingLabelRecord } from "@/types/shipping-labels";
 import { mergePdfPages } from "./pdf";
-import { classifyShippingLabel } from "./status";
+import { classifyShippingLabel, isShippingLabelPrintable } from "./status";
 
 export type ShippingLabelPrintRequest =
   | { orderId: string; scope: "unused" }
@@ -24,11 +24,11 @@ function compareInventoryOrder(
 
 function invalidSelection(orderId: string): Error {
   return new Error(
-    `Print selection must contain distinct unused labels from order ${orderId}.`
+    `Print selection must contain distinct printable labels from order ${orderId}.`
   );
 }
 
-function selectUnusedLabels(
+function selectLabelsForPrinting(
   request: ShippingLabelPrintRequest,
   records: ShippingLabelRecord[]
 ): ShippingLabelRecord[] {
@@ -54,7 +54,7 @@ function selectUnusedLabels(
   const selected = request.labelIds.map((id) => byId.get(id));
   if (
     selected.some(
-      (record) => !record || classifyShippingLabel(record) !== "unused"
+      (record) => !record || !isShippingLabelPrintable(record)
     )
   ) {
     throw invalidSelection(request.orderId);
@@ -71,7 +71,7 @@ export async function buildShippingLabelPrintPdf(
   if (!orderId) throw new Error("Order ID is required for label printing.");
 
   const normalizedRequest = { ...request, orderId } as ShippingLabelPrintRequest;
-  const labels = selectUnusedLabels(
+  const labels = selectLabelsForPrinting(
     normalizedRequest,
     await deps.listLabels(orderId)
   );

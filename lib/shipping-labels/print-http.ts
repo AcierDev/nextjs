@@ -33,7 +33,7 @@ function parsePrintRequest(value: unknown): ShippingLabelPrintRequest {
   ) {
     return { orderId: body.orderId, labelIds: body.labelIds as string[] };
   }
-  throw new Error("Choose all unused labels or specific unused label IDs.");
+  throw new Error("Choose all unused labels or specific label IDs.");
 }
 
 export async function handlePrintFutureLabels(
@@ -50,7 +50,7 @@ export async function handlePrintFutureLabels(
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Content-Type": PDF_CONTENT_TYPE,
-        "Content-Disposition": `inline; filename="unused-labels-${safeOrderId}.pdf"`,
+        "Content-Disposition": `inline; filename="shipping-labels-${safeOrderId}.pdf"`,
       },
     });
   } catch (error) {

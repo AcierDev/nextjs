@@ -140,7 +140,7 @@ function completionDeps(
   return { calls, deps };
 }
 
-test("a matched future tracker completes only when every future label has left pre_transit", async () => {
+test("a matched future tracker completes only when every future label has confirmed shipping", async () => {
   const blocked = completionDeps(
     { orderId: "order-1", completion: false },
     null

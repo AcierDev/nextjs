@@ -13,6 +13,16 @@ import type { Tracker, TrackerStatus } from "../typings/types";
 
 const BASE_PAGE_WIDTH = 300;
 const PAGE_HEIGHT = 500;
+const FIRST_LABEL_PAGE = 1;
+const SECOND_LABEL_PAGE = 2;
+const THIRD_LABEL_PAGE = 3;
+const SUCCESS_STATUS = 200;
+const REPRINTABLE_STATUSES: TrackerStatus[] = [
+  "in_transit",
+  "out_for_delivery",
+  "available_for_pickup",
+  "delivered",
+];
 
 function tracker(id: string, status: TrackerStatus): Tracker {
   return {
@@ -131,16 +141,59 @@ test("selected printing preserves requested inventory order", async () => {
   );
 });
 
-test("selected printing rejects used, missing, and duplicate labels", async () => {
+test("selected printing reprints shipped labels without changing their tracking", async () => {
+  for (const status of REPRINTABLE_STATUSES) {
+    const records = [label("shipped", status, FIRST_LABEL_PAGE)];
+    const beforePrinting = structuredClone(records);
+    const memory = await printDeps(records);
+    const response = await handlePrintFutureLabels(
+      new Request("https://example.test/api/shipping/labels/print", {
+        method: "POST",
+        body: JSON.stringify({ orderId: "order-1", labelIds: ["shipped"] }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      memory.deps
+    );
+
+    assert.equal(response.status, SUCCESS_STATUS, status);
+    const pdf = await PDFDocument.load(await response.arrayBuffer());
+    assert.deepEqual(
+      pdf.getPages().map((page) => page.getWidth() - BASE_PAGE_WIDTH),
+      [FIRST_LABEL_PAGE],
+      status
+    );
+    assert.deepEqual(records, beforePrinting, status);
+  }
+});
+
+test("selected printing merges unused and in-transit labels in inventory order", async () => {
+  const memory = await printDeps([
+    label("unused", "pre_transit", FIRST_LABEL_PAGE),
+    label("in-transit", "in_transit", SECOND_LABEL_PAGE),
+    label("unselected", "delivered", THIRD_LABEL_PAGE),
+  ]);
+  const bytes = await buildShippingLabelPrintPdf(
+    { orderId: "order-1", labelIds: ["in-transit", "unused"] },
+    memory.deps
+  );
+  const pdf = await PDFDocument.load(bytes);
+
+  assert.deepEqual(
+    pdf.getPages().map((page) => page.getWidth() - BASE_PAGE_WIDTH),
+    [FIRST_LABEL_PAGE, SECOND_LABEL_PAGE]
+  );
+});
+
+test("selected printing rejects issue, missing, foreign, and duplicate labels", async () => {
   const records = [
     label("unused", "pre_transit", 1),
-    label("used", "in_transit", 2),
+    label("issue", "issue", 2),
     label("other-order", "pre_transit", 3, 1, "upload-1", "order-2"),
   ];
   const memory = await printDeps(records);
 
   for (const labelIds of [
-    ["used"],
+    ["issue"],
     ["other-order"],
     ["missing"],
     ["unused", "unused"],
@@ -150,7 +203,7 @@ test("selected printing rejects used, missing, and duplicate labels", async () =
         { orderId: "order-1", labelIds },
         memory.deps
       ),
-      /unused labels from order order-1/i
+      /labels from order order-1/i
     );
   }
   assert.equal(memory.reads.length, 0);

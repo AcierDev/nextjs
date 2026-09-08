@@ -1,12 +1,6 @@
 import type { FutureLabelTrackerUpdateResult } from "./webhook";
-import type { Tracker, TrackerStatus } from "@/typings/types";
-
-const LEGACY_COMPLETING_STATUSES: ReadonlySet<TrackerStatus> = new Set([
-  "in_transit",
-  "out_for_delivery",
-  "delivered",
-  "available_for_pickup",
-]);
+import type { Tracker } from "@/typings/types";
+import { SHIPPED_TRACKER_STATUSES } from "./status";
 
 export type TrackerCompletionDeps = {
   applyFutureLabelUpdate: (
@@ -35,6 +29,6 @@ export async function processTrackerCompletion(
     return futureCompletion ? orderId : null;
   }
 
-  if (!LEGACY_COMPLETING_STATUSES.has(tracker.status)) return null;
+  if (!SHIPPED_TRACKER_STATUSES.has(tracker.status)) return null;
   return (await deps.completeLegacyOrder(orderId)) ? orderId : null;
 }

@@ -22,11 +22,14 @@ import { printFutureLabels } from "@/lib/shipping-labels/client-print";
 import {
   defaultShippingLabelFilter,
   filterShippingLabelInventory,
-  normalizeUnusedSelection,
+  normalizePrintableSelection,
   shippingLabelInventoryCounts,
   type ShippingLabelInventoryFilter,
 } from "@/lib/shipping-labels/inventory";
-import { classifyShippingLabel } from "@/lib/shipping-labels/status";
+import {
+  classifyShippingLabel,
+  isShippingLabelPrintable,
+} from "@/lib/shipping-labels/status";
 import type {
   ShippingLabelCarrier,
   ShippingLabelRecord,
@@ -68,6 +71,13 @@ function categoryPresentation(record: ShippingLabelRecord) {
       className: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/30",
     };
   }
+  if (record.processingStatus === "ready" && record.tracker?.status === "unknown") {
+    return {
+      label: "Awaiting tracking",
+      icon: RefreshCw,
+      className: "bg-amber-500/10 text-amber-300 ring-amber-500/30",
+    };
+  }
   return {
     label: "Needs review",
     icon: AlertTriangle,
@@ -99,17 +109,17 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
   );
   const filter = filterOverride ?? defaultShippingLabelFilter(labels);
   const selectableIds = useMemo(
-    () => normalizeUnusedSelection(selectedIds, labels),
+    () => normalizePrintableSelection(selectedIds, labels),
     [labels, selectedIds]
   );
   const visibleLabels = useMemo(
     () => filterShippingLabelInventory(labels, filter),
     [filter, labels]
   );
-  const visibleUnusedIds = useMemo(
+  const visiblePrintableIds = useMemo(
     () =>
       visibleLabels
-        .filter((record) => classifyShippingLabel(record) === "unused")
+        .filter(isShippingLabelPrintable)
         .map((record) => record.id),
     [visibleLabels]
   );
@@ -175,15 +185,17 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
         <div>
           <h3 className="font-semibold text-foreground">Individual labels</h3>
           <p className="text-xs text-muted-foreground">
-            Pre-transit labels are unused. Every other tracking status is used.
+            Pre-transit labels are unused. Labels count as used only after
+            confirmed shipping activity. Unknown or unsuccessful tracking
+            statuses stay in Issues and do not complete the order.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             size="sm"
-            onClick={() => void handlePrint({ orderId, scope: "unused" })}
-            disabled={printing || counts.unused === 0}
+            onClick={() => void handlePrint({ orderId, labelIds: visiblePrintableIds })}
+            disabled={printing || visiblePrintableIds.length === 0}
             className="bg-amber-500 text-slate-950 hover:bg-amber-400"
           >
             {printing ? (
@@ -191,7 +203,7 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
             ) : (
               <Printer className="mr-1.5 h-4 w-4" />
             )}
-            Print all unused ({counts.unused})
+            Print shown ({visiblePrintableIds.length})
           </Button>
           <Button
             type="button"
@@ -227,14 +239,14 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
             </button>
           ))}
         </div>
-        {visibleUnusedIds.length > 0 && (
+        {visiblePrintableIds.length > 0 && (
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            onClick={() => setSelectedIds(new Set(visibleUnusedIds))}
+            onClick={() => setSelectedIds(new Set(visiblePrintableIds))}
           >
-            Select shown unused
+            Select shown labels
           </Button>
         )}
       </div>
@@ -265,7 +277,7 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    {category === "unused" && (
+                    {isShippingLabelPrintable(record) && (
                       <input
                         type="checkbox"
                         aria-label={`Select label page ${record.pageNumber}`}
@@ -327,7 +339,7 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
                 >
                   <Eye className="mr-1 h-3.5 w-3.5" /> Preview
                 </Button>
-                {category === "unused" && (
+                {isShippingLabelPrintable(record) && (
                   <Button
                     type="button"
                     size="sm"
@@ -343,19 +355,21 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
                 )}
                 {category === "issues" && (
                   <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => void rescan(record.id)}
-                      disabled={busy}
-                    >
-                      <RefreshCw
-                        className={cn("mr-1 h-3.5 w-3.5", busy && "animate-spin")}
-                      />
-                      Retry
-                    </Button>
+                    {(record.processingStatus !== "ready" || !record.tracker) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => void rescan(record.id)}
+                        disabled={busy}
+                      >
+                        <RefreshCw
+                          className={cn("mr-1 h-3.5 w-3.5", busy && "animate-spin")}
+                        />
+                        Retry
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"

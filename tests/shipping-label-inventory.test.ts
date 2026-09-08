@@ -1,15 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { Db } from "mongodb";
 
 import {
   defaultShippingLabelFilter,
   filterShippingLabelInventory,
   isLabelAddedRecently,
-  normalizeUnusedSelection,
+  normalizePrintableSelection,
   shippingLabelInventoryCounts,
 } from "../lib/shipping-labels/inventory";
+import { futureLabelCounts } from "../lib/shipping-labels/repository";
 import type { ShippingLabelRecord } from "../types/shipping-labels";
 import type { Tracker, TrackerStatus } from "../typings/types";
+
+const EXPECTED_INVENTORY_COUNTS = {
+  all: 5,
+  unused: 1,
+  used: 1,
+  issues: 3,
+};
+const LABEL_CREATED_AT = 1;
 
 function record(
   id: string,
@@ -63,30 +73,56 @@ test("inventory filters use exact automatic categories", () => {
     record("b", "delivered"),
     record("c", "failure"),
     record("d", "issue"),
+    record("e", "unknown"),
   ];
 
-  assert.deepEqual(shippingLabelInventoryCounts(labels), {
-    all: 4,
-    unused: 1,
-    used: 2,
-    issues: 1,
-  });
+  assert.deepEqual(shippingLabelInventoryCounts(labels), EXPECTED_INVENTORY_COUNTS);
   assert.deepEqual(
     filterShippingLabelInventory(labels, "used").map((label) => label.id),
-    ["b", "c"]
+    ["b"]
+  );
+  assert.deepEqual(
+    filterShippingLabelInventory(labels, "issues").map((label) => label.id),
+    ["c", "d", "e"]
   );
   assert.equal(defaultShippingLabelFilter(labels), "unused");
 });
 
-test("only current unused labels remain selectable", () => {
+test("order summary counts do not report unknown or failed trackers as used", async () => {
+  const labels = [
+    record("a", "pre_transit"),
+    record("b", "delivered"),
+    record("c", "failure"),
+    record("d", "issue"),
+    record("e", "unknown"),
+  ];
+  const db = {
+    collection: () => ({
+      find: () => ({ toArray: async () => labels }),
+    }),
+  } as unknown as Db;
+
+  assert.deepEqual(await futureLabelCounts(db), {
+    "order-1": {
+      total: EXPECTED_INVENTORY_COUNTS.all,
+      unused: EXPECTED_INVENTORY_COUNTS.unused,
+      used: EXPECTED_INVENTORY_COUNTS.used,
+      issues: EXPECTED_INVENTORY_COUNTS.issues,
+      latestCreatedAt: LABEL_CREATED_AT,
+    },
+  });
+});
+
+test("unused and shipped labels remain selectable for printing", () => {
   const labels = [
     record("unused", "pre_transit"),
     record("used", "in_transit"),
     record("issue", "issue"),
+    record("unknown", "unknown"),
   ];
   assert.deepEqual(
-    [...normalizeUnusedSelection(new Set(["unused", "used", "issue"]), labels)],
-    ["unused"]
+    [...normalizePrintableSelection(new Set(["unused", "used", "issue", "unknown", "deleted"]), labels)],
+    ["unused", "used"]
   );
 });
 

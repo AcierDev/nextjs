@@ -32,6 +32,7 @@ import { cn } from "@/utils/functions";
 import { FedExBuyLabelDialog } from "./FedExBuyLabelDialog";
 import { useLabelUpload } from "@/hooks/useLabelUpload";
 import { FutureLabelInventory } from "./FutureLabelInventory";
+import { hasAnyShippingLabel } from "@/lib/shipping-labels/client";
 
 //╔═══╗ ════════════════════════════════════════════════════════════════ ╔═══╗
 //║ 🎚️ TAB CONFIG                                                        ║
@@ -87,12 +88,24 @@ export function ViewLabel({
   });
   const { updateFileProgress, markFileComplete } = useUploadProgressStore();
   const { uploadLabels } = useLabelUpload();
-  const { labels, fetchAllLabels, removeLabel, getLabelUrl } = useShippingStore();
+  const {
+    labels,
+    futureSummaries,
+    fetchAllLabels,
+    removeLabel,
+    getLabelUrl,
+  } = useShippingStore();
   const orderLabels = labels[orderId] || [];
-  const pdfExists = orderLabels.length > 0;
+  const hasLegacyPdf = orderLabels.length > 0;
+  const pdfExists = hasAnyShippingLabel(
+    orderLabels,
+    futureSummaries[orderId]
+  );
   const [activeTab, setActiveTab] = useState<TabValue>(
     pdfExists ? "view" : "manage"
   );
+  const hasFixedHeightContent =
+    activeTab === "manage" || hasLegacyPdf || !pdfExists;
 
   useEffect(() => {
     if (!pdfExists && activeTab === "view") setActiveTab("manage");
@@ -483,12 +496,15 @@ export function ViewLabel({
       {/*╔═══╗ ═══════════════════════════════════════════════════════════ ╔═══╗
         ║ 🧱 LOCKED-HEIGHT CONTENT (toggle stays put across tabs)            ║
         ╚═══╝ ═══════════════════════════════════════════════════════════ ╚═══╝*/}
-      <div className="flex flex-col" style={{ height: PREVIEW_HEIGHT }}>
+      <div
+        className="flex flex-col"
+        style={hasFixedHeightContent ? { height: PREVIEW_HEIGHT } : undefined}
+      >
         {/*╔═══╗ ═══════════════════════════════════════════════════════════ ╔═══╗
           ║ 👁️ VIEW PANEL                                                     ║
           ╚═══╝ ═══════════════════════════════════════════════════════════ ╚═══╝*/}
         {activeTab === "view" && (
-          pdfExists && orderLabels.length > 0 ? (
+          hasLegacyPdf ? (
             <div className="flex flex-col h-full gap-3">
               <div className="flex-1 min-h-0 rounded-xl overflow-hidden bg-background ring-1 ring-blue-500/20 shadow-[0_0_24px_-12px_rgba(59,130,246,0.45)]">
                 <iframe
@@ -558,7 +574,7 @@ export function ViewLabel({
                 )}
               </div>
             </div>
-          ) : (
+          ) : !pdfExists ? (
             <div className="flex-1 flex items-center justify-center">
               <Alert className="max-w-md border-blue-500/30 bg-blue-500/5">
                 <AlertCircle className="h-4 w-4 text-blue-400" />
@@ -569,7 +585,7 @@ export function ViewLabel({
                 </AlertDescription>
               </Alert>
             </div>
-          )
+          ) : null
         )}
 
         {/*╔═══╗ ═══════════════════════════════════════════════════════════ ╔═══╗

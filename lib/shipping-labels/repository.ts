@@ -7,6 +7,7 @@ import type {
 } from "@/types/shipping-labels";
 import type { Tracker } from "@/typings/types";
 import { LABEL_SCAN_STALE_AFTER_MS } from "./config";
+import { classifyShippingLabel } from "./status";
 
 const COLLECTION_PREFIX = "shipping-labels";
 type ShippingLabelSetFields = NonNullable<
@@ -225,13 +226,7 @@ export async function futureLabelCounts(
       summary.latestCreatedAt ?? 0,
       record.createdAt
     );
-    if (record.processingStatus !== "ready" || !record.tracker) {
-      summary.issues += 1;
-    } else if (record.tracker.status === "pre_transit") {
-      summary.unused += 1;
-    } else {
-      summary.used += 1;
-    }
+    summary[classifyShippingLabel(record)]++;
   }
 
   return summaries;

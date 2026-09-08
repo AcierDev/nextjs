@@ -2,7 +2,7 @@ import type {
   ShippingLabelCategory,
   ShippingLabelRecord,
 } from "@/types/shipping-labels";
-import { classifyShippingLabel } from "./status";
+import { classifyShippingLabel, isShippingLabelPrintable } from "./status";
 
 export const RECENT_LABEL_WINDOW_HOURS = 12;
 const MILLISECONDS_PER_HOUR = 60 * 60 * 1000;
@@ -55,13 +55,13 @@ export function filterShippingLabelInventory(
     : labels.filter((label) => classifyShippingLabel(label) === filter);
 }
 
-export function normalizeUnusedSelection(
+export function normalizePrintableSelection(
   selectedIds: Set<string>,
   labels: ShippingLabelRecord[]
 ): Set<string> {
   const selectableIds = new Set(
     labels
-      .filter((label) => classifyShippingLabel(label) === "unused")
+      .filter(isShippingLabelPrintable)
       .map((label) => label.id)
   );
   return new Set([...selectedIds].filter((id) => selectableIds.has(id)));

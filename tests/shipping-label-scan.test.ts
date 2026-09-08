@@ -9,13 +9,30 @@ import {
   handleScanFutureLabel,
   type ScanShippingLabelHttpDeps,
 } from "../lib/shipping-labels/scan-http";
+import {
+  evaluateFutureLabelCompletion,
+  type FutureLabelCompletionDeps,
+} from "../lib/shipping-labels/order-completion";
 import { mergeTrackerProjection } from "../lib/shipping-labels/tracker-projection";
+import {
+  applyFutureLabelTrackerUpdate,
+  type FutureLabelTrackerUpdateDeps,
+} from "../lib/shipping-labels/webhook";
 import type { TrackingInfo } from "../types/shipping";
 import type { ShippingLabelRecord } from "../types/shipping-labels";
-import type { Tracker, TrackerStatus } from "../typings/types";
+import {
+  ItemStatus,
+  type Item,
+  type Tracker,
+  type TrackerStatus,
+} from "../typings/types";
 
 const TRACKING_A = "1Z999AA10123456783";
 const TRACKING_B = "1Z999AA10123456784";
+const LIFECYCLE_TIMESTAMP = 5_000;
+const LIFECYCLE_ITEM_INDEX = 0;
+const LIFECYCLE_TRANSITIONS_BEFORE_PICKUP = 0;
+const LIFECYCLE_TRANSITIONS_AFTER_PICKUP = 1;
 
 function tracker(
   trackingCode: string,
@@ -201,6 +218,107 @@ test("an already-ready page repairs projection without rescanning", async () => 
   assert.equal(memory.getFetchTrackerCalls(), 1);
   assert.equal(memory.getProjectedTrackers().length, 1);
   assert.equal(memory.getCompletionCalls(), 2);
+});
+
+test("a new unknown tracker stays at the door until a shipment enters transit", async () => {
+  let record = pendingLabel();
+  let currentOrder: Item = {
+    id: record.orderId,
+    createdAt: LIFECYCLE_TIMESTAMP,
+    status: ItemStatus.At_The_Door,
+    visible: true,
+    deleted: false,
+    index: LIFECYCLE_ITEM_INDEX,
+  };
+  let completedTransitions = LIFECYCLE_TRANSITIONS_BEFORE_PICKUP;
+
+  const completionDeps: FutureLabelCompletionDeps = {
+    listLabels: async () => [record],
+    getOrder: async () => currentOrder,
+    completeOrder: async (item, completedAt) => {
+      completedTransitions++;
+      currentOrder = {
+        ...item,
+        prevStatus: item.status,
+        status: ItemStatus.Done,
+        completedAt,
+      };
+      return true;
+    },
+    now: () => LIFECYCLE_TIMESTAMP,
+  };
+  const evaluateCompletion = () =>
+    evaluateFutureLabelCompletion(record.orderId, completionDeps);
+
+  const scanDeps: ScanShippingLabelDeps = {
+    getLabel: async (labelId) => (labelId === record.id ? record : null),
+    claimLabel: async (labelId, updatedAt) => {
+      if (labelId !== record.id) return null;
+      record = { ...record, processingStatus: "scanning", updatedAt };
+      return record;
+    },
+    getObject: async () => Buffer.from("one-page-pdf"),
+    extractTracking: async () => ({
+      trackingNumber: TRACKING_B,
+      carrier: "UPS",
+      sender: "Everwood",
+      receiver: "Customer",
+    }),
+    fetchTracker: async () => tracker(TRACKING_B, "unknown"),
+    saveReady: async (_labelId, update) => {
+      record = { ...record, ...update, processingStatus: "ready" };
+      return record;
+    },
+    saveNeedsReview: async (_labelId, processingError, updatedAt) => {
+      record = {
+        ...record,
+        processingStatus: "needs_review",
+        processingError,
+        updatedAt,
+      };
+      return record;
+    },
+    upsertTrackerProjection: async () => {},
+    evaluateOrderCompletion: evaluateCompletion,
+    now: () => LIFECYCLE_TIMESTAMP,
+  };
+
+  await scanShippingLabel(record.id, null, scanDeps);
+  assert.equal(currentOrder.status, ItemStatus.At_The_Door);
+  assert.equal(completedTransitions, LIFECYCLE_TRANSITIONS_BEFORE_PICKUP);
+
+  await scanShippingLabel(record.id, null, scanDeps);
+  assert.equal(currentOrder.status, ItemStatus.At_The_Door);
+  assert.equal(completedTransitions, LIFECYCLE_TRANSITIONS_BEFORE_PICKUP);
+
+  const webhookDeps: FutureLabelTrackerUpdateDeps = {
+    updateByTrackerId: async (trackerId, nextTracker, updatedAt) => {
+      if (trackerId !== record.trackerId) return null;
+      record = {
+        ...record,
+        tracker: nextTracker,
+        trackingNumber: nextTracker.tracking_code,
+        updatedAt,
+      };
+      return record;
+    },
+    evaluateOrderCompletion: async () => evaluateCompletion(),
+    now: () => LIFECYCLE_TIMESTAMP,
+  };
+
+  await applyFutureLabelTrackerUpdate(
+    tracker(TRACKING_B, "pre_transit"),
+    webhookDeps
+  );
+  assert.equal(currentOrder.status, ItemStatus.At_The_Door);
+  assert.equal(completedTransitions, LIFECYCLE_TRANSITIONS_BEFORE_PICKUP);
+
+  await applyFutureLabelTrackerUpdate(
+    tracker(TRACKING_B, "in_transit"),
+    webhookDeps
+  );
+  assert.equal(currentOrder.status, ItemStatus.Done);
+  assert.equal(completedTransitions, LIFECYCLE_TRANSITIONS_AFTER_PICKUP);
 });
 
 test("scan HTTP accepts an empty automatic-scan request", async () => {

@@ -10,12 +10,15 @@ import {
 import type { ShippingLabelRecord } from "../types/shipping-labels";
 import type { Tracker, TrackerStatus } from "../typings/types";
 
-const NON_PRE_TRANSIT_STATUSES: TrackerStatus[] = [
-  "unknown",
+const SHIPPED_STATUSES: TrackerStatus[] = [
   "in_transit",
   "out_for_delivery",
   "delivered",
   "available_for_pickup",
+];
+
+const UNCONFIRMED_STATUSES: TrackerStatus[] = [
+  "unknown",
   "return_to_sender",
   "failure",
   "cancelled",
@@ -75,15 +78,22 @@ async function makeDimensionedPdf(): Promise<Buffer> {
   return Buffer.from(await pdf.save());
 }
 
-test("only pre_transit labels are unused", () => {
+test("only confirmed shipping statuses count as used", () => {
   assert.equal(classifyShippingLabel(labelRecord("pre_transit")), "unused");
 
-  for (const status of NON_PRE_TRANSIT_STATUSES) {
+  for (const status of SHIPPED_STATUSES) {
     assert.equal(
       classifyShippingLabel(labelRecord(status)),
       "used",
       `${status} must count as used`
     );
+  }
+});
+
+test("unknown and unsuccessful tracking statuses are issues, not proof of pickup", () => {
+  for (const status of UNCONFIRMED_STATUSES) {
+    assert.equal(classifyShippingLabel(labelRecord(status)), "issues", status);
+    assert.equal(canCompleteFutureLabelOrder([labelRecord(status)]), false, status);
   }
 });
 
@@ -99,7 +109,7 @@ test("missing or unresolved trackers are issues", () => {
   );
 });
 
-test("every future label must leave pre_transit before order completion", () => {
+test("every future label needs confirmed shipping before order completion", () => {
   assert.equal(
     canCompleteFutureLabelOrder([
       labelRecord("in_transit"),
@@ -110,7 +120,7 @@ test("every future label must leave pre_transit before order completion", () => 
   assert.equal(
     canCompleteFutureLabelOrder([
       labelRecord("delivered"),
-      labelRecord("failure"),
+      labelRecord("out_for_delivery"),
     ]),
     true
   );

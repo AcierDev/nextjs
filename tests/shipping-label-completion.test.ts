@@ -8,6 +8,18 @@ import {
 import type { ShippingLabelRecord } from "../types/shipping-labels";
 import { ItemStatus, type Item, type Tracker, type TrackerStatus } from "../typings/types";
 
+const FIRST_LABEL_PAGE = 1;
+const SECOND_LABEL_PAGE = 2;
+const NO_COMPLETED_TRANSITIONS = 0;
+const BLOCKING_TRACKER_STATUSES: TrackerStatus[] = [
+  "unknown",
+  "pre_transit",
+  "failure",
+  "error",
+  "cancelled",
+  "return_to_sender",
+];
+
 function tracker(status: TrackerStatus): Tracker {
   return {
     id: `tracker-${status}`,
@@ -135,10 +147,27 @@ test("one unresolved future label blocks order completion", async () => {
   assert.equal(memory.completedTransitions.length, 0);
 });
 
-test("all non-pre_transit labels complete the order exactly once", async () => {
+test("unconfirmed labels keep the order at the door even when another label shipped", async () => {
+  for (const status of BLOCKING_TRACKER_STATUSES) {
+    const memory = completionMemory([
+      readyLabel("delivered", FIRST_LABEL_PAGE),
+      readyLabel(status, SECOND_LABEL_PAGE),
+    ]);
+
+    assert.equal(
+      await evaluateFutureLabelCompletion("order-1", memory.deps),
+      false,
+      status
+    );
+    assert.equal(memory.getOrder().status, ItemStatus.At_The_Door, status);
+    assert.equal(memory.completedTransitions.length, NO_COMPLETED_TRANSITIONS, status);
+  }
+});
+
+test("all confirmed shipping labels complete the order exactly once", async () => {
   const memory = completionMemory([
     readyLabel("in_transit", 1),
-    readyLabel("failure", 2),
+    readyLabel("delivered", 2),
   ]);
 
   assert.equal(
