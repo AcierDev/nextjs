@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CombinedLabelPreview } from "./CombinedLabelPreview";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -85,7 +86,13 @@ function categoryPresentation(record: ShippingLabelRecord) {
   };
 }
 
-export function FutureLabelInventory({ orderId }: { orderId: string }) {
+export function FutureLabelInventory({
+  orderId,
+  previewHeight,
+}: {
+  orderId: string;
+  previewHeight?: string;
+}) {
   const {
     labels,
     isLoading,
@@ -171,6 +178,19 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
           <Loader2 className="h-4 w-4 animate-spin" /> Organizing label pages…
         </div>
       </section>
+    );
+  }
+
+  if (previewHeight) {
+    return (
+      <div className="flex flex-col gap-3">
+        {error && <p role="alert">{error}</p>}
+        <CombinedLabelPreview
+          urls={labels.map((record) => `/api/shipping/labels/${encodeURIComponent(record.id)}/pdf`)}
+          height={previewHeight}
+          orderId={orderId}
+        />
+      </div>
     );
   }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import React, { createElement } from "react";
+import { PDFDocument } from "pdf-lib";
 import TestRenderer, {
   act,
   type ReactTestInstance,
@@ -15,6 +16,8 @@ const EMPTY_ORDER_ID = "empty-order";
 const ONE_LABEL = 1;
 const ZERO_LABELS = 0;
 const NOT_FOUND_INDEX = -1;
+const PREVIEW_TIMEOUT_MS = 3000;
+const PREVIEW_POLL_MS = 20;
 
 const originalFetch = globalThis.fetch;
 let ViewLabel: typeof ViewLabelComponent;
@@ -34,12 +37,23 @@ function buttonByLabel(
 }
 
 before(async () => {
+  const pdf = await PDFDocument.create();
+  pdf.addPage();
+  const pdfBytes = await pdf.save();
   globalThis.fetch = async (input) => {
     const url = String(input);
+    if (url.endsWith("/pdf")) return new Response(new Uint8Array(pdfBytes));
     const body = url.includes("/summary")
       ? { summaries: {} }
       : url.includes("/labels?")
-        ? { labels: [] }
+        ? { labels: [{
+            id: "saved-label",
+            orderId: FUTURE_ORDER_ID,
+            pageNumber: ONE_LABEL,
+            processingStatus: "ready",
+            trackerId: "saved-tracker",
+            tracker: { status: "in_transit" },
+          }] }
         : { files: [] };
     return new Response(JSON.stringify(body), {
       headers: { "Content-Type": "application/json" },
@@ -87,8 +101,19 @@ test("future-only orders can open the label view without an empty warning", asyn
     ).length,
     ZERO_LABELS
   );
+  const deadline = Date.now() + PREVIEW_TIMEOUT_MS;
+  while (!renderer!.root.findAllByType("iframe").length && Date.now() < deadline) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, PREVIEW_POLL_MS));
+    });
+  }
+  const previews = renderer!.root.findAllByType("iframe");
+  assert.equal(previews.length, ONE_LABEL);
+  const preview = previews[ZERO_LABELS];
+  assert.ok(preview);
+  assert.match(preview.props.src, /^blob:/);
   assert.equal(
-    renderer!.root.findAll((node) => Boolean(node.props.style?.height)).length,
+    renderer!.root.findAllByProps({ "aria-label": "Individual shipping labels" }).length,
     ZERO_LABELS
   );
   act(() => renderer!.unmount());

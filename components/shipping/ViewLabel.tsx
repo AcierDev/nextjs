@@ -31,6 +31,7 @@ import { TrackingInfo, FileProgress } from "@/types/shipping";
 import { cn } from "@/utils/functions";
 import { FedExBuyLabelDialog } from "./FedExBuyLabelDialog";
 import { useLabelUpload } from "@/hooks/useLabelUpload";
+import { CombinedLabelPreview } from "./CombinedLabelPreview";
 import { FutureLabelInventory } from "./FutureLabelInventory";
 import { hasAnyShippingLabel } from "@/lib/shipping-labels/client";
 
@@ -491,7 +492,13 @@ export function ViewLabel({
         </div>
       </div>
 
-      <FutureLabelInventory key={orderId} orderId={orderId} />
+      {(activeTab === "manage" || !hasLegacyPdf) && (
+        <FutureLabelInventory
+          key={orderId}
+          orderId={orderId}
+          previewHeight={activeTab === "view" ? PREVIEW_HEIGHT : undefined}
+        />
+      )}
 
       {/*╔═══╗ ═══════════════════════════════════════════════════════════ ╔═══╗
         ║ 🧱 LOCKED-HEIGHT CONTENT (toggle stays put across tabs)            ║
@@ -507,14 +514,10 @@ export function ViewLabel({
           hasLegacyPdf ? (
             <div className="flex flex-col h-full gap-3">
               <div className="flex-1 min-h-0 rounded-xl overflow-hidden bg-background ring-1 ring-blue-500/20 shadow-[0_0_24px_-12px_rgba(59,130,246,0.45)]">
-                <iframe
-                  src={getLabelUrl(orderLabels[currentPdfIndex] || "")}
-                  width="100%"
-                  height="100%"
-                  className="border-0"
-                  title={`Shipping Label ${
-                    currentPdfIndex + 1
-                  } for Order ${orderId}`}
+                <CombinedLabelPreview
+                  urls={orderLabels.map(getLabelUrl)}
+                  height={PREVIEW_HEIGHT}
+                  orderId={orderId}
                 />
               </div>
               <div className="flex items-center justify-between gap-3 px-1">
@@ -543,35 +546,7 @@ export function ViewLabel({
                     ? "Rescanning…"
                     : "Rescan"}
                 </Button>
-                {orderLabels.length > 1 && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setCurrentPdfIndex((prev) => Math.max(0, prev - 1))
-                      }
-                      disabled={currentPdfIndex === 0}
-                    >
-                      <ChevronLeft className="mr-1 h-4 w-4" /> Previous
-                    </Button>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      Label {currentPdfIndex + 1} of {orderLabels.length}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setCurrentPdfIndex((prev) =>
-                          Math.min(orderLabels.length - 1, prev + 1)
-                        )
-                      }
-                      disabled={currentPdfIndex === orderLabels.length - 1}
-                    >
-                      Next <ChevronRight className="ml-1 h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
+
               </div>
             </div>
           ) : !pdfExists ? (
