@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { Db } from "mongodb";
 
 import {
-  defaultShippingLabelFilter,
+  DEFAULT_SHIPPING_LABEL_FILTER,
   filterShippingLabelInventory,
   isLabelAddedRecently,
   normalizePrintableSelection,
@@ -85,7 +85,10 @@ test("inventory filters use exact automatic categories", () => {
     filterShippingLabelInventory(labels, "issues").map((label) => label.id),
     ["c", "d", "e"]
   );
-  assert.equal(defaultShippingLabelFilter(labels), "unused");
+  assert.deepEqual(
+    filterShippingLabelInventory(labels, DEFAULT_SHIPPING_LABEL_FILTER),
+    labels
+  );
 });
 
 test("order summary counts do not report unknown or failed trackers as used", async () => {
@@ -123,16 +126,6 @@ test("unused and shipped labels remain selectable for printing", () => {
   assert.deepEqual(
     [...normalizePrintableSelection(new Set(["unused", "used", "issue", "unknown", "deleted"]), labels)],
     ["unused", "used"]
-  );
-});
-
-test("inventory defaults to all when no unused labels remain", () => {
-  assert.equal(
-    defaultShippingLabelFilter([
-      record("used", "delivered"),
-      record("issue", "issue"),
-    ]),
-    "all"
   );
 });
 

@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { useFutureLabelInventory } from "@/hooks/useFutureLabelInventory";
 import { printFutureLabels } from "@/lib/shipping-labels/client-print";
 import {
-  defaultShippingLabelFilter,
+  DEFAULT_SHIPPING_LABEL_FILTER,
   filterShippingLabelInventory,
   normalizePrintableSelection,
   shippingLabelInventoryCounts,
@@ -95,8 +95,9 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
     correctTracking,
     remove,
   } = useFutureLabelInventory(orderId);
-  const [filterOverride, setFilterOverride] =
-    useState<ShippingLabelInventoryFilter | null>(null);
+  const [filter, setFilter] = useState<ShippingLabelInventoryFilter>(
+    DEFAULT_SHIPPING_LABEL_FILTER
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [printing, setPrinting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -107,7 +108,6 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
     () => shippingLabelInventoryCounts(labels),
     [labels]
   );
-  const filter = filterOverride ?? defaultShippingLabelFilter(labels);
   const selectableIds = useMemo(
     () => normalizePrintableSelection(selectedIds, labels),
     [labels, selectedIds]
@@ -227,7 +227,7 @@ export function FutureLabelInventory({ orderId }: { orderId: string }) {
               key={option.value}
               type="button"
               aria-pressed={filter === option.value}
-              onClick={() => setFilterOverride(option.value)}
+              onClick={() => setFilter(option.value)}
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
                 filter === option.value

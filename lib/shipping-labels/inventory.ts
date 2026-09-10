@@ -38,13 +38,7 @@ export function shippingLabelInventoryCounts(
   return counts;
 }
 
-export function defaultShippingLabelFilter(
-  labels: ShippingLabelRecord[]
-): ShippingLabelInventoryFilter {
-  return labels.some((label) => classifyShippingLabel(label) === "unused")
-    ? "unused"
-    : "all";
-}
+export const DEFAULT_SHIPPING_LABEL_FILTER: ShippingLabelInventoryFilter = "all";
 
 export function filterShippingLabelInventory(
   labels: ShippingLabelRecord[],
